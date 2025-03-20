@@ -1,4 +1,10 @@
+build
+dist
+env
+
+
 app_settings.json
 client_secret*
 charlotte
 *.pickle
+*.spec

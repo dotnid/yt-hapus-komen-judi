@@ -20,6 +20,7 @@ import googleapiclient.discovery
 import googleapiclient.errors
 import googleapiclient.http
 from google.auth.transport.requests import Request
+from google import genai
 
 # === API Configuration ===
 SCOPES = ["https://www.googleapis.com/auth/youtube.force-ssl"]
@@ -35,7 +36,7 @@ class CommentFilterWorker(QThread):
     finished_signal = pyqtSignal(int, int)  # total, deleted count
     oauth_required = pyqtSignal()
     
-    def __init__(self, video_id, client_secrets_file, retry_on_error=True, retry_delay=5):
+    def __init__(self, video_id, client_secrets_file, retry_on_error=True, retry_delay=5, is_delete=True, use_ai=False, use_basic=True, gemini_api_key=None):
         super().__init__()
         self.video_id = video_id
         self.client_secrets_file = client_secrets_file
@@ -44,7 +45,12 @@ class CommentFilterWorker(QThread):
         self.retry_on_error = retry_on_error
         self.retry_delay = retry_delay
         self.max_retries = 3
-    
+        self.is_delete = is_delete
+        self.use_ai = use_ai
+        self.ai_cache = {}  # cache untuk analisis AI
+        self.use_basic = use_basic
+        self.gemini_api_key = gemini_api_key
+
     def stop(self):
         self.stopped = True
     
@@ -238,12 +244,18 @@ class CommentFilterWorker(QThread):
         """Hide comment by ID with retry logic"""
         if self.stopped:
             return False
-
+        if self.is_delete:
+            moderationStatus="rejected"
+            banAuthor=True
+        else:
+            moderationStatus="heldForReview"
+            banAuthor=None
+        # print(moderationStatus, banAuthor)
         try:
             self.youtube.comments().setModerationStatus(
                 id=comment_id,
-                moderationStatus="rejected",
-                banAuthor=True
+                moderationStatus=moderationStatus,
+                banAuthor=banAuthor
             ).execute()
             
             self.progress_update.emit(f"✅ Komentar {comment_id} berhasil disembunyikan.")
@@ -284,7 +296,56 @@ class CommentFilterWorker(QThread):
                 return self.hide_comment(comment_id, retries)
 
             return False
+
+    def gemini_analyze_comments_batch(self, texts):
+        """
+        Melakukan batch inference menggunakan Gemini 2 Flash API untuk analisis komentar.
+        """
+        if not texts:
+            return []
+
+        api_key = self.gemini_api_key
+        if not api_key:
+            self.progress_update.emit("⚠️ API Key Gemini belum diatur!")
+            return [(False, []) for _ in texts]
+
+        client = genai.Client(api_key=api_key)
+
+        prompt = """
+        Anda adalah sistem moderasi komentar. Analisa setiap komentar dan tandai sebagai:
+        - "negative" jika mengandung ujaran kebencian, tidak senonoh dan kalimat negatif atau berbahaya lainnya
+        - "spam" jika promosi berlebihan
+        - "gambling" jika berhubungan dengan judi
+        - "other" jika ada alasan lain yang tidak baik untuk komunitas
+        - "none" jika tidak termasuk dari semuanya
+
+        Format output JSON:
+        [{"flagged": true/false, "reason": "negative/spam/gambling/none"}, ...]
         
+        Berikut komentar yang perlu dianalisis:
+        """ + json.dumps(texts, ensure_ascii=False)
+
+        try:
+            response = client.models.generate_content(
+                model="gemini-2.0-flash", contents=prompt
+            )
+            text = response.text.strip()
+            pattern = re.compile(r"\[\s*\{.*?\}\s*\]", re.DOTALL)
+            match = pattern.search(text)
+            if match:
+                json_data = match.group(0)
+                # print("JSON ditemukan:", json_data)
+            # else:
+            #     print("JSON tidak ditemukan.")
+            # print(response.text, json_data)
+            results = json.loads(json_data)
+
+            return [(res.get("flagged", False), [res.get("reason", "none")]) for res in results]
+
+        except Exception as e:
+            self.progress_update.emit(f"⚠️ Gemini API error: {str(e)}")
+            return [(False, []) for _ in texts]
+    
     def filter_and_delete_comments(self):
         """Filter comments and delete if they contain special characters"""
         comments = self.get_video_comments()
@@ -298,7 +359,17 @@ class CommentFilterWorker(QThread):
         deleted_count = 0
         skipped_count = 0
         
-        for i, (comment_id, text, author, published_at) in enumerate(comments):
+        if self.use_ai:
+            # Lakukan batch inference menggunakan API Gemini
+            comment_texts = [text for (_, text, _, _) in comments]
+            ai_results = self.gemini_analyze_comments_batch(comment_texts)
+            # print(ai_results)
+        else:
+            # Jika AI tidak diaktifkan, buat list hasil false
+            ai_results = [(False, []) for _ in comments]
+        
+        # for i, (comment_id, text, author, published_at) in enumerate(comments):
+        for i, ((comment_id, text, author, published_at), (flagged, labels)) in enumerate(zip(comments, ai_results)):
             if self.stopped:
                 self.finished_signal.emit(len(comments), deleted_count)
                 return
@@ -315,16 +386,29 @@ class CommentFilterWorker(QThread):
             self.progress_update.emit(f"ID: {comment_id}")
             self.progress_update.emit(f"Text: {text}")
             
-            if self.contains_special_chars(text):
-                self.progress_update.emit(f"🚨 Komentar mengandung karakter khusus. Mencoba menghapus...")
+            if flagged:
+                self.progress_update.emit(f"🚨 Gemini API mendeteksi komentar mengandung: {', '.join(labels)}")
                 if self.hide_comment(comment_id):
                     deleted_count += 1
-                    self.progress_update.emit(f"✅ Komentar berhasil dihapus!")
+                    self.progress_update.emit(f"✅ Komentar berhasil dihapus/disembunyikan!")
                 else:
                     skipped_count += 1
-                    self.progress_update.emit(f"❌ Gagal menghapus komentar.")
+                    self.progress_update.emit(f"❌ Gagal menghapus/sembunyikan komentar.")
+                continue
             else:
-                self.progress_update.emit(f"✅ Komentar tidak mengandung karakter khusus. Dibiarkan.")
+                self.progress_update.emit("✅ Tidak terdeteksi masalah oleh Gemini API.")
+    
+            if self.use_basic:
+                if self.contains_special_chars(text):
+                    self.progress_update.emit(f"🚨 Komentar mengandung karakter khusus. Mencoba menghapus...")
+                    if self.hide_comment(comment_id):
+                        deleted_count += 1
+                        self.progress_update.emit(f"✅ Komentar berhasil dihapus/disembunyikan!")
+                    else:
+                        skipped_count += 1
+                        self.progress_update.emit(f"❌ Gagal menghapus/sembunyikan komentar.")
+                else:
+                    self.progress_update.emit(f"✅ Komentar tidak mengandung karakter khusus. Dibiarkan.")
             
             # Add separator for readability
             self.progress_update.emit("-------------------------------------------")
@@ -425,6 +509,7 @@ class MainWindow(QMainWindow):
         self.init_ui()
         self.worker = None
         self.load_settings()
+        self.gemini_api_key = None
     
     def init_ui(self):
         self.setWindowTitle("YouTube Comment Manager")
@@ -492,15 +577,56 @@ class MainWindow(QMainWindow):
         config_layout.addLayout(retry_layout)
         
         # Remember settings
-        remember_layout = QHBoxLayout()
+        # remember_layout = QHBoxLayout()
         self.remember_checkbox = QCheckBox("Simpan lokasi file client secrets")
         self.remember_checkbox.setChecked(True)
-        remember_layout.addWidget(self.remember_checkbox)
-        config_layout.addLayout(remember_layout)
+        retry_layout.addWidget(self.remember_checkbox)
+        # config_layout.addLayout(retry_layout)
         
         config_group.setLayout(config_layout)
         layout.addWidget(config_group)
-        
+
+        # Gunakan AI checkbox
+        # basic_layout = QHBoxLayout()
+        self.use_basic_checkbox = QCheckBox("Gunakan Deteksi Sederhana")
+        self.use_basic_checkbox.setChecked(True)
+        retry_layout.addWidget(self.use_basic_checkbox)
+        # config_layout.addLayout(retry_layout)
+
+        self.is_delete_checkbox = QCheckBox("Check untuk hapus komentar dan block user (Uncheck untuk hide)")
+        self.is_delete_checkbox.setChecked(False)
+        retry_layout.addWidget(self.is_delete_checkbox)
+        # config_layout.addLayout(retry_layout)
+
+        # Gunakan AI checkbox
+        ai_layout = QHBoxLayout()
+        self.use_ai_checkbox = QCheckBox("Gunakan AI")
+        self.use_ai_checkbox.setChecked(True)
+        self.use_ai_checkbox.stateChanged.connect(self.toggle_api_key_input)  # Tampilkan/sembunyikan API Key
+        ai_layout.addWidget(self.use_ai_checkbox)
+        config_layout.addLayout(ai_layout)
+
+        # API Key input 
+        self.api_key_group = QGroupBox("Gemini API Key")  # Bungkus dalam group box
+        api_key_layout = QHBoxLayout()
+        api_key_label = QLabel("API Key:")
+        self.api_key_input = QLineEdit()
+        self.api_key_input.setPlaceholderText("Masukkan API Key Gemini...")
+
+        # self.api_key_input.textChanged.connect(self.save_settings)  # Auto-save saat berubah
+        self.api_key_input.setEchoMode(QLineEdit.EchoMode.Password)  # Sensor input
+
+        api_key_layout.addWidget(api_key_label)
+        api_key_layout.addWidget(self.api_key_input)
+        self.api_key_group.setLayout(api_key_layout)
+        config_layout.addWidget(self.api_key_group)
+
+        config_group.setLayout(config_layout)
+        layout.addWidget(config_group)
+
+        # Atur visibilitas awal berdasarkan status checkbox
+        self.toggle_api_key_input()
+
         # Action buttons
         buttons_layout = QHBoxLayout()
         self.start_button = QPushButton("Mulai Filter")
@@ -578,7 +704,20 @@ class MainWindow(QMainWindow):
                         self.log_output.append(f"[INFO] Loaded saved client secrets path: {path}")
                     else:
                         self.log_output.append(f"[WARNING] Saved client secrets path not found: {path}")
-                
+                # Set API Key jika ada
+                if "api_key" in settings:
+                    self.api_key_input.setText(settings["api_key"])
+
+                # Set status checkbox "Gunakan AI"
+                if "use_ai" in settings:
+                    self.use_ai_checkbox.setChecked(settings["use_ai"])
+                                    
+                if "use_basic" in settings:
+                    self.use_basic_checkbox.setChecked(settings["use_basic"])
+
+                if "is_delete" in settings:
+                    self.is_delete_checkbox.setChecked(settings["is_delete"])
+
                 # Load other settings
                 if "remember_path" in settings:
                     self.remember_checkbox.setChecked(settings["remember_path"])
@@ -586,15 +725,31 @@ class MainWindow(QMainWindow):
                 if "retry_on_error" in settings:
                     self.retry_checkbox.setChecked(settings["retry_on_error"])
                     
+
+
+                # Atur tampilan input API Key sesuai status terakhir
+                # self.toggle_api_key_input()
+                
         except Exception as e:
-            self.log_output.append(f"[ERROR] Failed to load settings: {str(e)}")
+            if hasattr(self, "log_output"):
+                self.log_output.append(f"[ERROR] Failed to load settings: {str(e)}")
+            else:
+                print(e)
+
     
     def save_settings(self):
         """Save settings to file"""
         try:
+            
+            self.gemini_api_key = self.api_key_input.text().strip()
+
             settings = {
                 "remember_path": self.remember_checkbox.isChecked(),
-                "retry_on_error": self.retry_checkbox.isChecked()
+                "retry_on_error": self.retry_checkbox.isChecked(),
+                "api_key": self.api_key_input.text().strip(),
+                "use_ai": self.use_ai_checkbox.isChecked(),
+                "use_basic": self.use_basic_checkbox.isChecked(),
+                "is_delete": self.is_delete_checkbox.isChecked(),
             }
             
             # Save client secrets path if remember is checked
@@ -602,14 +757,20 @@ class MainWindow(QMainWindow):
                 path = self.secrets_path.text().strip()
                 if path and os.path.exists(path):
                     settings["client_secrets_path"] = path
+
+            # print(settings)
             
             with open(SETTINGS_FILE, 'w') as f:
                 json.dump(settings, f)
-                
-            self.log_output.append("[INFO] Settings saved")
-                
+            # Cek apakah `log_output` ada sebelum mencoba menggunakannya
+            if hasattr(self, "log_output"):
+                self.log_output.append("[INFO] Settings saved")
+
         except Exception as e:
-            self.log_output.append(f"[ERROR] Failed to save settings: {str(e)}")
+            if hasattr(self, "log_output"):
+                self.log_output.append(f"[ERROR] Failed to save settings: {str(e)}")
+            else:
+                print(e)
     
     def browse_secrets_file(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -671,12 +832,21 @@ class MainWindow(QMainWindow):
         # Disable/enable buttons
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
+
+        # Membaca status checkbox "Gunakan AI"
+        use_ai = self.use_ai_checkbox.isChecked()
+        use_basic = self.use_basic_checkbox.isChecked()
+        is_delete = self.is_delete_checkbox.isChecked()
         
         # Create and start worker thread
         self.worker = CommentFilterWorker(
             video_id, 
             client_secrets,
-            retry_on_error=self.retry_checkbox.isChecked()
+            retry_on_error=self.retry_checkbox.isChecked(),
+            use_basic=use_basic,
+            use_ai=use_ai,
+            gemini_api_key=self.gemini_api_key,
+            is_delete=is_delete,
         )
         self.worker.progress_update.connect(self.update_log)
         self.worker.status_update.connect(self.update_status)
@@ -724,6 +894,17 @@ class MainWindow(QMainWindow):
             self.load_banned_users()
         else:
             QMessageBox.warning(self, "Gagal", "Gagal melakukan unban pengguna.")
+
+    def toggle_api_key_input(self):
+        """Tampilkan atau sembunyikan input API Key berdasarkan checkbox 'Gunakan AI'."""
+        if self.use_ai_checkbox.isChecked():
+            self.api_key_group.show()
+        else:
+            self.api_key_group.hide()
+        
+        if self.api_key_input.text().strip():
+            self.save_settings()  # Simpan perubahan secara otomatis
+
 
     @pyqtSlot(str)
     def update_log(self, message):
