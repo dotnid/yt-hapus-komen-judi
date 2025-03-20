@@ -176,6 +176,7 @@ Jika Anda merasa proyek ini bermanfaat dan ingin mendukung pengembangannya, Anda
 👨‍💻 **Dodot Nanda Trihanggoro**  
 📧 Email: [dodotnanda@gmail.com](mailto:dodotnanda@gmail.com)  
 🔗 LinkedIn: [Dodot Nanda](https://www.linkedin.com/in/dodotnanda/)
+🎥 Demo :[Demo](https://youtu.be/VWVd5kyhQTI?si=cBWCSh9RcTzZmfkt)
 
 ---
 
