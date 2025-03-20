@@ -5,6 +5,7 @@ YouTube Comment Manager adalah aplikasi GUI berbasis **PyQt6** yang digunakan un
 
 Aplikasi ini dikhususkan untuk menghapus komentar yang meresahkan seperti **judi online, komentar inapropriate, spam, serta komentar yang mengandung karakter tidak wajar**. Dengan ini, pemilik channel dapat menjaga kolom komentar tetap bersih dan nyaman untuk komunitasnya.
 
+🚀 Sekarang sudah terintegrasi dengan AI Gemini Flash 2.0 untuk menyaring komentar secara lebih cerdas dan fleksibel sesuai kebutuhan!
 ---
 
 ## **Fitur**
@@ -14,13 +15,20 @@ Aplikasi ini dikhususkan untuk menghapus komentar yang meresahkan seperti **judi
 ✅ Menampilkan daftar pengguna yang diblokir  
 ✅ Menggunakan autentikasi **OAuth 2.0** untuk keamanan  
 ✅ Bisa diubah menjadi aplikasi **.exe** untuk Windows  
+✅ **Integrasi dengan AI Gemini Flash 2.0 untuk filtering lebih cerdas**  
+✅ **Dapat memasukkan API Key Gemini langsung dari GUI**  
 
 ---
 
 ## **Metode Filtering**
-Aplikasi ini menggunakan metode filtering yang sangat **sederhana namun efektif**. Filtering dilakukan dengan **hanya mengizinkan komentar yang berisikan karakter yang terdapat di keyboard standar**. Karakter lain yang tidak umum atau tidak wajar akan dianggap sebagai komentar yang mencurigakan dan bisa dihapus atau disembunyikan secara otomatis.
+Aplikasi ini sekarang mendukung dua metode filtering:
+1. **Filtering Karakter Standar**: Hanya mengizinkan komentar yang menggunakan karakter dari keyboard standar.
+2. **Filtering Berbasis AI (Gemini Flash 2.0)**: Menggunakan model AI untuk menganalisis dan memfilter komentar berdasarkan prompt yang bisa disesuaikan.
 
-Dengan metode ini, aplikasi dapat dengan mudah **menyaring komentar yang berisi simbol-simbol aneh, kode berbahaya, atau karakter dari bahasa yang tidak didukung**.
+Dengan metode AI, pengguna dapat mengatur sendiri kriteria komentar yang akan difilter, misalnya:
+- "Hapus semua komentar yang mengandung kata-kata promosi judi online."
+- "Tolak komentar yang bersifat ofensif atau mengandung ujaran kebencian."
+- "Hanya izinkan komentar yang relevan dengan isi video."
 
 ---
 
@@ -112,30 +120,59 @@ pyinstaller --onefile --windowed --name "YouTubeCommentManager" app.py
 Setelah proses selesai, file `.exe` akan tersedia di folder `dist/`.
 
 ---
+## **5. Menyiapkan API Key Gemini Flash 2.0**
 
-## **5. Disclaimer**
-Aplikasi ini masih dalam tahap pengembangan dan mungkin masih memiliki beberapa bug. **Penggunaan aplikasi ini sepenuhnya menjadi tanggung jawab pengguna. Pengembang tidak bertanggung jawab atas segala kerusakan atau masalah yang terjadi akibat penggunaan aplikasi ini.**
+Untuk menggunakan fitur filtering AI, Anda perlu mendapatkan API Key dari **Google AI Studio**.
+
+### **5.1. Cara Mendapatkan API Key**
+1. **Buka Google AI Studio**: [https://aistudio.google.com/](https://aistudio.google.com/)
+2. Login dengan akun Google Anda.
+3. Pilih **API & Keys** di menu navigasi.
+4. Klik **Generate API Key**, lalu salin API Key tersebut.
+5. Masukkan API Key melalui GUI aplikasi pada kolom "Gemini API Key".
+
+### **5.2. Batasan Kuota API Gemini**
+Perlu diperhatikan bahwa **API Gemini Flash 2.0 memiliki batas kuota harian**, sehingga jumlah permintaan ke AI untuk menganalisis komentar tidak bisa dilakukan tanpa batas. Jika kuota habis, pengguna harus menunggu hingga kuota diperbarui oleh Google.
+
+Untuk melihat penggunaan kuota API:
+1. Buka **Google AI Studio**.
+2. Masuk ke **API & Keys**.
+3. Cek jumlah pemakaian kuota API yang tersisa.
 
 ---
 
-## **6. Kontribusi**
+## **6. Konfigurasi Prompt AI untuk Filtering**
+Prompt AI dapat disesuaikan sesuai kebutuhan filtering komentar. Contoh prompt yang bisa digunakan:
+- "Blokir semua komentar yang mengandung kata-kata kasar atau spam."
+- "Hapus komentar yang mempromosikan produk atau layanan."
+- "Filter komentar yang tidak relevan dengan video."
+
+Untuk mengatur prompt ini, pengguna dapat menyesuaikan input dalam GUI aplikasi sesuai dengan kebutuhan mereka.
+
+---
+## **7. Disclaimer**
+Aplikasi ini masih dalam tahap pengembangan dan mungkin masih memiliki beberapa bug. **Penggunaan aplikasi ini sepenuhnya menjadi tanggung jawab pengguna. Pengembang tidak bertanggung jawab atas segala kerusakan atau masalah yang terjadi akibat penggunaan aplikasi ini. Penggunaan AI dalam aplikasi ini tidak 100% akurat, pengguna juga bertanggung jawab atas hasil filtering, serta perlu memperhatikan batas kuota API Gemini Flash 2.0 dan YouTube API.**
+
+---
+
+## **8. Kontribusi**
 Kami sangat menyambut kontribusi dari komunitas! Jika Anda ingin berpartisipasi dalam pengembangan dan perbaikan aplikasi ini, silakan buat **pull request** atau ajukan **issue** di repository ini. Setiap masukan dan kontribusi sangat kami hargai.
 
 ---
 
-## **7. Lisensi**
+## **9. Lisensi**
 Proyek ini dilisensikan di bawah **MIT License**. Silakan baca [LICENSE](LICENSE) untuk informasi lebih lanjut.
 
 ---
 
-## **8. Donasi**
+## **10. Donasi**
 Jika Anda merasa proyek ini bermanfaat dan ingin mendukung pengembangannya, Anda bisa memberikan donasi melalui:
 
 [![Saweria](https://img.shields.io/badge/Donate-Saweria-orange)](https://saweria.co/dodotnanda)
 
 ---
 
-## **9. Author**
+## **11. Author**
 👨‍💻 **Dodot Nanda Trihanggoro**  
 📧 Email: [dodotnanda@gmail.com](mailto:dodotnanda@gmail.com)  
 🔗 LinkedIn: [Dodot Nanda](https://www.linkedin.com/in/dodotnanda/)
