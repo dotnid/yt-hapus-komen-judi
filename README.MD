@@ -147,7 +147,7 @@ Prompt AI dapat disesuaikan sesuai kebutuhan filtering komentar. Contoh prompt y
 - "Hapus komentar yang mempromosikan produk atau layanan."
 - "Filter komentar yang tidak relevan dengan video."
 
-Untuk mengatur prompt ini, pengguna dapat menyesuaikan input dalam GUI aplikasi sesuai dengan kebutuhan mereka.
+Untuk mengatur prompt ini, pengguna dapat menyesuaikan sesuai dengan kebutuhan mereka.
 
 ---
 ## **7. Disclaimer**
